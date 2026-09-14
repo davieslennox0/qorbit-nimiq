@@ -43,6 +43,12 @@ export const USDT: Asset = { address: '0x55d398326f99059fF775485246999027B319795
 export const USDC: Asset = { address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', decimals: 18, symbol: 'USDC', name: 'USD Coin', coingeckoId: 'usd-coin', logo: 'https://assets.coingecko.com/coins/images/6319/small/usdc.png' };
 export const STABLES: Asset[] = [USDT, USDC];
 
+/** BNB Chain's native gas token (not an ERC-20), shown on the dashboard alongside USDT. */
+export const BNB = { symbol: 'BNB', name: 'BNB', decimals: 18, coingeckoId: 'binancecoin', logo: 'https://assets.coingecko.com/coins/images/825/small/bnb-icon2_2x.png' };
+
+/** Below this, a user may not be able to pay for an approval plus a swap. */
+export const LOW_BNB_THRESHOLD = 0.0001;
+
 export const ISSUER_LABEL: Record<Issuer, string> = { ondo: 'Ondo', xstocks: 'xStocks' };
 
 export const ISSUER_DISCLOSURE: Record<Issuer, string> = {

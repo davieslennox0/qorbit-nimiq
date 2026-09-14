@@ -6,7 +6,7 @@ Live at [qorbitpay.xyz](https://qorbitpay.xyz).
 ## Features
 
 1. **Connect wallet**: uses Nimiq Pay's injected provider. No sign-up, no accounts, nothing stored server-side.
-2. **Portfolio**: your balances across the full catalog, read straight from BNB Chain.
+2. **Portfolio**: your BNB, USDT and stock-token balances on BNB Chain in one view, with a low-BNB warning so you can always pay network fees.
 3. **Market**: 1,278 tokenized stocks and ETFs from Ondo and xStocks, with live prices. Filter to what's tradeable right now, or browse every listing.
 4. **Asset detail**: live price, 7-day price action, the issuer's terms, and buy/sell/send shortcuts.
 5. **Swap**: best-price routing across BNB Chain liquidity through the KyberSwap aggregator. Review shows the quote, the 0.5% platform fee, minimum received, price impact and network fee. You confirm an exact-amount approval, then the swap.
