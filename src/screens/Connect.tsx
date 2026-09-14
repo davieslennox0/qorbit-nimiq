@@ -20,7 +20,7 @@ export default function Connect() {
     <div className="screen" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 24, textAlign: 'center' }}>
       <div className="card certificate-border" style={{ padding: '36px 20px' }}>
         <div className="label">Certificate of Holding</div>
-        <h1 className="wordmark" style={{ fontSize: 48, margin: '10px 0 6px' }}>Qorbitpay</h1>
+        <h1 className="wordmark" style={{ fontSize: 48, margin: '10px 0 6px' }}>Qorbit</h1>
         <p className="value-serif" style={{ fontStyle: 'italic', color: 'var(--ink-soft)', margin: 0 }}>
           Tokenized equities, held in your Nimiq Pay wallet.
         </p>
@@ -31,7 +31,7 @@ export default function Connect() {
           {connecting ? 'Awaiting confirmation in Nimiq Pay…' : 'Connect wallet'}
         </button>
       ) : (
-        <div className="warn-banner">Open Qorbitpay from inside Nimiq Pay to connect your wallet.</div>
+        <div className="warn-banner">Open Qorbit from inside Nimiq Pay to connect your wallet.</div>
       )}
 
       {error && <div className="warn-banner" role="alert">{error}</div>}

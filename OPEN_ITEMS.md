@@ -24,5 +24,3 @@ Status as of 2026-09-14.
 - [x] Live at https://qorbitpay.xyz (Caddy, static files in /var/www/qorbitpay)
 - [ ] Register the Mini App in Nimiq Pay with https://qorbitpay.xyz
 - [ ] Test end to end inside Nimiq Pay with a small real swap, gift and tip. Confirm Nimiq Pay's provider accepts `wallet_switchEthereumChain` to 0x38 and the SDK NIM send works.
-- [ ] Publish the public GitHub repo
-- [ ] 250-word submission description

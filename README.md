@@ -1,7 +1,7 @@
-# Qorbitpay
+# Qorbit
 
 A Nimiq Pay Mini App for holding, trading and gifting tokenized stocks and ETFs on BNB Chain.
-Built for the Nimiq Mini Apps Competition, Cycle II. Live at [qorbitpay.xyz](https://qorbitpay.xyz).
+Live at [qorbitpay.xyz](https://qorbitpay.xyz).
 
 ## Features
 
@@ -24,7 +24,7 @@ Both issuers' tokens are standard, freely transferable ERC-20s outside the US. T
 
 ## How swaps and the 0.5% fee work
 
-Swaps execute on KyberSwap's MetaAggregationRouterV2 (`0x6131B5fae19EA4f9D964eAc0408E4408b66337b5`), using its built-in fee (`feeAmount=50` bps, charged on the output token). Qorbitpay deploys no contract of its own and never holds user funds.
+Swaps execute on KyberSwap's MetaAggregationRouterV2 (`0x6131B5fae19EA4f9D964eAc0408E4408b66337b5`), using its built-in fee (`feeAmount=50` bps, charged on the output token). Qorbit deploys no contract of its own and never holds user funds.
 
 The swap API builds the transaction, so the app checks that calldata before anything is signed. It decodes the calldata against the router's verified ABI and checks:
 - the input token, output token and amount

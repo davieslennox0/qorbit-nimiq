@@ -52,7 +52,7 @@ export default function AssetDetail() {
     return () => { cancelled = true; };
   }, [token, evmAddress]);
 
-  if (!token) return <div className="screen"><Notice>This token isn't in the Qorbitpay catalog.</Notice></div>;
+  if (!token) return <div className="screen"><Notice>This token isn't in the Qorbit catalog.</Notice></div>;
 
   const weekChange = history && history.length > 1 ? ((history[history.length - 1].usd - history[0].usd) / history[0].usd) * 100 : null;
   const holds = held !== null && held > 0;

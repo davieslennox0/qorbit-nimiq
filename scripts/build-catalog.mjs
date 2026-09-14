@@ -35,7 +35,7 @@ function parseCsv(text) {
 
 async function fetchJson(url, init, tries = 5) {
   for (let i = 0; i < tries; i++) {
-    const res = await fetch(url, { ...init, headers: { 'user-agent': 'qorbitpay-catalog', ...init?.headers } });
+    const res = await fetch(url, { ...init, headers: { 'user-agent': 'qorbit-catalog', ...init?.headers } });
     if (res.status === 429 || res.status >= 500) { await sleep(2000 * (i + 1)); continue; }
     return res.json();
   }
@@ -115,7 +115,7 @@ async function probeLiquidity(tokens) {
     for (const i of queue) {
       const t = tokens[i];
       try {
-        const j = await fetchJson(`${KYBER}?tokenIn=${USDT}&tokenOut=${t.address}&amountIn=${amountIn}`, { headers: { 'x-client-id': 'qorbitpay' } });
+        const j = await fetchJson(`${KYBER}?tokenIn=${USDT}&tokenOut=${t.address}&amountIn=${amountIn}`, { headers: { 'x-client-id': 'qorbit' } });
         const r = j.data?.routeSummary;
         const loss = r ? 1 - Number(r.amountOutUsd) / Number(r.amountInUsd) : 1;
         results[i] = { ...t, tradeable: !!r && Number(r.amountOutUsd) > 0 && loss < 0.05 };

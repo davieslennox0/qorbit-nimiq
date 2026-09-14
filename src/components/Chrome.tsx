@@ -12,7 +12,7 @@ export function TopBar({ back }: { back?: boolean }) {
       {back ? (
         <button className="link-btn" onClick={() => navigate(-1)} aria-label="Back">← Back</button>
       ) : (
-        <span className="wordmark">Qorbitpay</span>
+        <span className="wordmark">Qorbit</span>
       )}
       <span className="label mono">{evmAddress ? shortAddress(evmAddress) : ''}</span>
     </header>

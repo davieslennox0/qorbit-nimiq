@@ -2,7 +2,7 @@ import { decodeFunctionData, getAddress, isAddress, isAddressEqual, zeroAddress,
 import { CHAIN } from '../config/chain';
 
 const API = `https://aggregator-api.kyberswap.com/${CHAIN.id === 56 ? 'bsc' : 'unsupported'}/api/v1`;
-const CLIENT_ID = 'qorbitpay';
+const CLIENT_ID = 'qorbit';
 
 /** KyberSwap MetaAggregationRouterV2 on BNB Chain — ABI verified via Sourcify. */
 export const KYBER_ROUTER: Address = '0x6131B5fae19EA4f9D964eAc0408E4408b66337b5';
