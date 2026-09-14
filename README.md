@@ -9,7 +9,7 @@ Live at [qorbitpay.xyz](https://qorbitpay.xyz).
 2. **Portfolio**: your BNB, USDT and stock-token balances on BNB Chain in one view, with a low-BNB warning so you can always pay network fees.
 3. **Market**: 450 tokenized US stocks and ETFs from Ondo Global Markets, with live prices. Filter to what's tradeable right now, or browse every listing.
 4. **Asset detail**: live price, 7-day price action, Ondo's terms, and buy/sell/send shortcuts.
-5. **Swap**: best-price routing across BNB Chain liquidity through the KyberSwap aggregator. Review shows the quote, the 0.5% platform fee, minimum received, price impact and network fee. You confirm an exact-amount approval, then the swap.
+5. **Swap**: routed through Bitget liquidity via LI.FI first, with the KyberSwap aggregator as a fallback. Review shows the quote, fees, minimum received, market value paid and received, and network fee. You confirm an exact-amount approval, then the swap.
 6. **Send / gift**: send any fraction of a stock token to any address, with an optional USDT tip (BNB Chain) or NIM tip (Nimiq, via the Mini App SDK).
 
 ## Assets
@@ -18,23 +18,25 @@ Live at [qorbitpay.xyz](https://qorbitpay.xyz).
 
 - Tokens come only from [Ondo's official token list](https://docs.ondo.finance/addresses).
 - Each token is checked on BNB Chain. The on-chain symbol must match Ondo's list and supply must be non-zero.
-- A token is marked "tradeable" only if a $50 USDT buy through the aggregator returns at least 97% of $50, valued at CoinGecko's market price.
+- A token is marked "tradeable" only if a $50 USDT buy returns at least 97% of $50, valued at CoinGecko's market price. It's checked on KyberSwap first; failures are re-checked on Bitget via LI.FI, largest companies first (`--bitget-only` re-runs this, subject to LI.FI's keyless rate limit).
 
 Ondo tokens are standard, freely transferable ERC-20s outside the US. They are not offered to US persons.
 
-## How swaps and the 0.5% fee work
+## How swaps work
 
-Swaps execute on KyberSwap's MetaAggregationRouterV2 (`0x6131B5fae19EA4f9D964eAc0408E4408b66337b5`), using its built-in fee (`feeAmount=50` bps, charged on the output token). Qorbit deploys no contract of its own and never holds user funds.
+**Routing.** Every swap is quoted on **Bitget liquidity via LI.FI** first (`allowExchanges=bitget`; any quote with a non-Bitget swap step is rejected). Bitget fills Ondo stocks at market prices even where on-chain pools are thin: a $50 MSFTon buy returns about $49.82 there, versus $13.93 through DEX pools. If Bitget has no route, errors or fails the fair-price guard, the app falls back to the **KyberSwap** aggregator.
 
-The swap API builds the transaction, so the app checks that calldata before anything is signed. It decodes the calldata against the router's verified ABI and checks:
-- the input token, output token and amount
-- that the recipient is the user
-- the fee recipient and fee size
-- that the on-chain minimum output is at least what the user reviewed
+**Fair-price guard.** Both sides of the trade are valued at CoinGecko market prices, never a router's own USD estimates (those have valued a PLTRon route at $3.9T). A swap that would lose more than 5% versus market, all fees included, is blocked, as is any swap whose price can't be verified. Above 2%, a warning is shown. The check runs again right before signing. Market prices survive CoinGecko's short rate limits by honouring `retry-after` and using prices up to 10 minutes old.
 
-**Fair-price guard.** The review screen values both sides of the trade at CoinGecko market prices. It never uses the aggregator's USD estimates, which can be wildly wrong for thin pools. A swap that would lose more than 5% versus the market price (fee included) is blocked, as is any swap where a market price can't be verified. Above 2%, a warning is shown. The check runs again right before signing.
+**Calldata checks before signing.** Both routers' transactions are decoded against their verified ABIs:
+- **LI.FI** (Diamond `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE`, `GenericSwapFacetV3`): receiver is the user, input token and amount, output token, integrator, and on-chain minimum output.
+- **KyberSwap** (`MetaAggregationRouterV2` `0x6131B5fae19EA4f9D964eAc0408E4408b66337b5`): input and output tokens, amount, recipient, fee recipient and size, and minimum output.
 
-If a quote is stale at confirm time, the app fetches a fresh route. It lowers the slippage setting so the minimum output never drops below the reviewed amount, or asks for a new quote. The swap is also dry-run before the wallet prompt.
+Quotes are refreshed right before signing (always for Bitget's market-maker quotes), with slippage tightened so the on-chain minimum never drops below the reviewed amount. The swap is also dry-run before the wallet prompt. Qorbit deploys no contract of its own and never holds user funds.
+
+**Fees.**
+- **KyberSwap route:** Qorbit's 0.5% is taken by the router on the output token (`feeAmount=50` bps).
+- **Bitget route:** LI.FI charges its own 0.25%, shown on the review screen. Qorbit's 0.5% needs an integrator registered at [portal.li.fi](https://portal.li.fi) with a fee wallet. Set it as `VITE_LIFI_FEE_INTEGRATOR`. Until then this route charges no Qorbit fee, and the review screen says so.
 
 ## Verified contracts (BNB Chain)
 
@@ -43,6 +45,7 @@ If a quote is stale at confirm time, the app fetches a fresh route. It lowers th
 | USDT | `0x55d398326f99059fF775485246999027B3197955` |
 | USDC | `0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d` |
 | KyberSwap MetaAggregationRouterV2 | `0x6131B5fae19EA4f9D964eAc0408E4408b66337b5` |
+| LI.FI Diamond | `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE` |
 
 ## Development
 
@@ -68,7 +71,7 @@ Wallet features need Nimiq Pay's injected providers (`window.ethereum`, `window.
 No analytics, no backend, no cookies. The app makes these network requests:
 - **BNB Chain public RPCs** (defibit, Binance, 1RPC, PublicNode): balances and transactions.
 - **CoinGecko public API**: prices. Sends coin IDs only, never your address.
-- **KyberSwap aggregator API**: swap quotes. Sends the tokens, amount and your wallet address, because routing and the transaction need them.
+- **LI.FI API** and **KyberSwap aggregator API**: swap quotes. Sends the tokens, amount and your wallet address, because routing and the transaction need them.
 - **Token logo images** from Ondo's CDN (cdn.ondo.finance) and CoinGecko, loaded with no referrer.
 
 ## License

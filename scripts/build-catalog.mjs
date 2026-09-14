@@ -2,6 +2,7 @@
 // sourced only from Ondo's published token list, verified on-chain, with a liquidity probe.
 // Usage: node scripts/build-catalog.mjs            (full rebuild)
 //        node scripts/build-catalog.mjs --logos-only (refresh logos, keep liquidity flags)
+//        node scripts/build-catalog.mjs --bitget-only (re-check non-tradeable tokens on Bitget via LI.FI)
 import fs from 'node:fs';
 import { createPublicClient, getAddress, http, parseAbi } from 'viem';
 import { bsc } from 'viem/chains';
@@ -158,6 +159,47 @@ async function verifyLogos(tokens) {
   return checked;
 }
 
+/**
+ * Re-checks tokens that failed on KyberSwap against Bitget liquidity via LI.FI, largest companies
+ * first. LI.FI allows ~75 keyless requests per ~2h per IP, so this stops cleanly when rate-limited.
+ */
+async function probeBitget(tokens) {
+  const candidates = tokens.filter((t) => !t.tradeable && t.coingeckoId);
+  const ids = candidates.map((t) => t.coingeckoId);
+  const caps = {}, prices = {};
+  for (let i = 0; i < ids.length; i += 250) {
+    const rows = await fetchJson(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&per_page=250&ids=${ids.slice(i, i + 250).join(',')}`);
+    for (const r of Array.isArray(rows) ? rows : []) { caps[r.id] = r.market_cap || 0; prices[r.id] = r.current_price; }
+    await sleep(2500);
+  }
+  const ordered = candidates.filter((t) => prices[t.coingeckoId]).sort((a, b) => (caps[b.coingeckoId] || 0) - (caps[a.coingeckoId] || 0));
+  const passed = new Set();
+  let checked = 0;
+  for (const t of ordered) {
+    const qs = new URLSearchParams({ fromChain: '56', toChain: '56', fromToken: USDT, toToken: t.address, fromAmount: (BigInt(PROBE_USD) * 10n ** 18n).toString(), fromAddress: '0x0000000000000000000000000000000000000001', slippage: '0.01', allowExchanges: 'bitget' });
+    const res = await fetch(`https://li.quest/v1/quote?${qs}`);
+    if (res.status === 429) { console.log(`  LI.FI rate limit reached after ${checked} checks; remaining tokens keep their KyberSwap result`); break; }
+    checked++;
+    const d = await res.json().catch(() => null);
+    const swaps = (d?.includedSteps ?? []).filter((x) => x.type === 'swap').map((x) => x.tool);
+    if (d?.estimate?.toAmount && swaps.length && swaps.every((x) => x === 'bitget')) {
+      const valueOut = (Number(d.estimate.toAmount) / 10 ** t.decimals) * prices[t.coingeckoId];
+      if (1 - valueOut / PROBE_USD < MAX_PROBE_LOSS) passed.add(t.address);
+    }
+    await sleep(400);
+  }
+  console.log(`  Bitget checked ${checked} tokens, ${passed.size} passed`);
+  return tokens.map((t) => (passed.has(t.address) ? { ...t, tradeable: true } : t));
+}
+
+if (process.argv.includes('--bitget-only')) {
+  const existing = JSON.parse(fs.readFileSync(OUT, 'utf8'));
+  const tokens = await probeBitget(existing.tokens);
+  fs.writeFileSync(OUT, JSON.stringify({ ...existing, generatedAt: new Date().toISOString(), tokens }, null, 0) + '\n');
+  console.log(`Tradeable after Bitget check: ${tokens.filter((t) => t.tradeable).length}/${tokens.length}`);
+  process.exit(0);
+}
+
 if (process.argv.includes('--logos-only')) {
   const existing = JSON.parse(fs.readFileSync(OUT, 'utf8'));
   const sources = new Map((await ondoTokens()).map((t) => [t.address.toLowerCase(), t.logo]));
@@ -173,7 +215,7 @@ const verified = await verifyOnChain(ondo);
 console.log(`Verified on-chain (symbol match, non-zero supply): ${verified.length}`);
 const withLogos = await verifyLogos(verified);
 console.log(`With logo: ${withLogos.filter((t) => t.logo).length}`);
-const probed = await probeLiquidity(withLogos);
+const probed = await probeBitget(await probeLiquidity(withLogos));
 const catalog = probed.sort((a, b) => Number(b.tradeable) - Number(a.tradeable) || a.symbol.localeCompare(b.symbol));
 console.log(`Tradeable ($${PROBE_USD} buy within ${MAX_PROBE_LOSS * 100}% of reference price): ${catalog.filter((t) => t.tradeable).length}`);
 

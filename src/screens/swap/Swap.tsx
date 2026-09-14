@@ -4,8 +4,9 @@ import { formatUnits, parseEventLogs, parseUnits, type Address } from 'viem';
 import { findToken, STABLES, TOKENS, USDT, type Asset } from '../../config/tokens';
 import { useWallet } from '../../hooks/WalletContext';
 import { ERC20_ABI, publicClient, readAllowance, readBalance } from '../../lib/erc20';
-import { assertFairPrice, buildSwapTx, getFeeRecipient, getQuote, KYBER_ROUTER, MAX_VALUE_LOSS, WARN_VALUE_LOSS, type SwapQuote } from '../../lib/kyberswap';
-import { fetchQuotes } from '../../lib/prices';
+import { buildSwapTx, freshQuoteForExecution, getBestQuote } from '../../lib/routing';
+import { assertFairPrice, getFeeRecipient, MAX_VALUE_LOSS, WARN_VALUE_LOSS, type SwapQuote } from '../../lib/swapTypes';
+import { cachedQuotes, fetchQuotes } from '../../lib/prices';
 import { getWalletClient } from '../../lib/wallet';
 import { formatQty, formatUsd } from '../../lib/format';
 import { LineItem, StepList, TxLink } from '../../components/Receipt';
@@ -17,7 +18,6 @@ type StepState = 'pending' | 'active' | 'done' | 'skipped';
 
 const ASSETS: Asset[] = [...STABLES, ...TOKENS];
 const SLIPPAGE_OPTIONS = [50, 100, 300];
-const QUOTE_MAX_AGE_MS = 30_000;
 const TRANSFER_EVENT = [{ type: 'event', name: 'Transfer', inputs: [{ name: 'from', type: 'address', indexed: true }, { name: 'to', type: 'address', indexed: true }, { name: 'value', type: 'uint256', indexed: false }] }] as const;
 
 const assetFor = (addr: string | null): Asset | undefined =>
@@ -89,9 +89,10 @@ export default function Swap() {
     setQuoting(true);
     try {
       // Reference market prices come from CoinGecko, independent of the swap router.
-      const refs = await fetchQuotes([from.coingeckoId, to.coingeckoId].filter((x): x is string => !!x)).catch(() => ({} as Record<string, { usd: number } | null>));
+      const refIds = [from.coingeckoId, to.coingeckoId].filter((x): x is string => !!x);
+      const refs = await fetchQuotes(refIds).catch(() => cachedQuotes(refIds));
       const refUsd = (a: Asset) => (a.coingeckoId ? refs[a.coingeckoId]?.usd ?? null : null);
-      setQuote(await getQuote({
+      setQuote(await getBestQuote({
         tokenIn: from.address, tokenOut: to.address, amountIn, slippageBps, user: evmAddress, feeRecipient,
         decimalsIn: from.decimals, decimalsOut: to.decimals, refUsdIn: refUsd(from), refUsdOut: refUsd(to),
       }));
@@ -111,36 +112,25 @@ export default function Swap() {
     const reviewedMin = quote.minOutNet;
     try {
       assertFairPrice(quote, to.symbol);
-      if (approveState !== 'done' && approveState !== 'skipped') {
-        const allowance = await readAllowance(quote.tokenIn, evmAddress, KYBER_ROUTER);
-        if (allowance >= quote.amountIn) {
-          setApproveState('skipped');
-        } else {
-          setApproveState('active');
-          // Exact-amount approval, so no open-ended allowance is left on the router.
-          const hash = await wallet.writeContract({ address: quote.tokenIn, abi: ERC20_ABI, functionName: 'approve', args: [KYBER_ROUTER, quote.amountIn] });
-          setApproveHash(hash);
-          const r = await publicClient.waitForTransactionReceipt({ hash });
-          if (r.status !== 'success') throw new Error('Approval reverted. Nothing was swapped.');
-          setApproveState('done');
-        }
+      // Always check against this route's contract: a new quote may use a different route than a previous attempt.
+      const allowance = await readAllowance(quote.tokenIn, evmAddress, quote.spender);
+      if (allowance >= quote.amountIn) {
+        setApproveState((st) => (st === 'done' ? st : 'skipped'));
+      } else {
+        setApproveState('active');
+        // Exact-amount approval, so no open-ended allowance is left on the router.
+        const hash = await wallet.writeContract({ address: quote.tokenIn, abi: ERC20_ABI, functionName: 'approve', args: [quote.spender, quote.amountIn] });
+        setApproveHash(hash);
+        const r = await publicClient.waitForTransactionReceipt({ hash });
+        if (r.status !== 'success') throw new Error('Approval reverted. Nothing was swapped.');
+        setApproveState('done');
       }
 
       setSwapState('active');
-      // Refresh a stale route, but never let the on-chain minimum drop below what the user reviewed.
-      let exec = quote;
-      if (Date.now() - quote.fetchedAt > QUOTE_MAX_AGE_MS) {
-        const fresh = await getQuote({
-          tokenIn: quote.tokenIn, tokenOut: quote.tokenOut, amountIn: quote.amountIn, slippageBps: quote.slippageBps, user: evmAddress, feeRecipient,
-          decimalsIn: quote.decimalsIn, decimalsOut: quote.decimalsOut, refUsdIn: quote.refUsdIn, refUsdOut: quote.refUsdOut,
-        });
-        assertFairPrice(fresh, to.symbol);
-        // 1 bp less than the exact headroom absorbs the router's wei-level rounding on the built minimum.
-        const headroomBps = Number(((fresh.amountOutNet - reviewedMin) * 10_000n) / fresh.amountOutNet) - 1;
-        if (headroomBps < 0) throw new Error('The price moved past your minimum. Get a new quote to continue.');
-        exec = { ...fresh, slippageBps: Math.min(quote.slippageBps, headroomBps) };
-      }
-      const tx = await buildSwapTx(exec, evmAddress, feeRecipient, reviewedMin);
+      // Re-quote on the same route if needed, never letting the on-chain minimum drop below what the user reviewed.
+      const exec = await freshQuoteForExecution(quote);
+      assertFairPrice(exec, to.symbol);
+      const tx = await buildSwapTx(exec, reviewedMin);
       await simulateWithRetry(evmAddress, tx.to, tx.data);
       const hash = await wallet.sendTransaction({ to: tx.to, data: tx.data });
       setSwapHash(hash);
@@ -150,8 +140,8 @@ export default function Swap() {
         .filter((l) => l.address.toLowerCase() === quote.tokenOut.toLowerCase() && l.args.to.toLowerCase() === evmAddress.toLowerCase())
         .map((l) => l.args.value)
         .sort((a, b) => (a < b ? -1 : 1));
-      // If this wallet is also the fee recipient, the smaller credit is the platform fee, not the swap output.
-      if (credits.length > 1 && feeRecipient.toLowerCase() === evmAddress.toLowerCase()) credits.shift();
+      // KyberSwap pays the fee in the output token: if this wallet is also the fee recipient, the smaller credit is the fee.
+      if (quote.provider === 'kyber' && credits.length > 1 && feeRecipient.toLowerCase() === evmAddress.toLowerCase()) credits.shift();
       setReceived(credits.reduce((sum, v) => sum + v, 0n));
       setSwapState('done');
       setStep('success');
@@ -213,7 +203,7 @@ export default function Swap() {
         {to.tradeable === false && <Notice>{to.symbol} has little DEX liquidity on BNB Chain. A route may not be found.</Notice>}
         {error && <Notice tone="error">{error}</Notice>}
         <button className="btn btn-primary" disabled={!canReview || quoting} onClick={review}>{quoting ? 'Finding best route…' : 'Review swap'}</button>
-        <p className="disclosure">Routed through the KyberSwap aggregator across BNB Chain liquidity. You need a little BNB for network fees.</p>
+        <p className="disclosure">Routed through Bitget liquidity via LI.FI first, with the KyberSwap aggregator as a fallback. Every quote is checked against market prices. You need a little BNB for network fees.</p>
 
         {picking && (
           <TokenPicker
@@ -238,14 +228,15 @@ export default function Swap() {
         <h2 className="wordmark page-title">Review</h2>
         <div className="card certificate-border">
           <LineItem label="You pay" value={fmt(quote.amountIn, from)} />
-          <LineItem label="Platform fee (0.5%)" value={fmt(quote.platformFee, to)} />
+          <LineItem label="Platform fee (0.5%)" value={quote.platformFeeSide === 'none' ? 'Not charged on this route' : fmt(quote.platformFee, quote.platformFeeSide === 'in' ? from : to)} />
+          {quote.routeFeeUsd !== null && <LineItem label="Route fee (LI.FI)" value={formatUsd(quote.routeFeeUsd)} />}
           <LineItem label="You receive (est.)" value={fmt(quote.amountOutNet, to)} strong />
           <LineItem label={`Minimum received (${slippageBps / 100}% slippage)`} value={fmt(quote.minOutNet, to)} />
           <LineItem label="Market value paid" value={quote.inUsd === null ? '—' : formatUsd(quote.inUsd)} />
           <LineItem label="Market value received" value={quote.outUsd === null ? '—' : <span style={{ color: lossColor }}>{formatUsd(quote.outUsd)}</span>} />
-          <LineItem label="Cost vs. market (incl. fee)" value={quote.valueLoss === null ? 'Unverified' : <span style={{ color: lossColor }}>{(quote.valueLoss * 100).toFixed(2)}%</span>} />
+          <LineItem label="Cost vs. market (all fees)" value={quote.valueLoss === null ? 'Unverified' : <span style={{ color: lossColor }}>{(quote.valueLoss * 100).toFixed(2)}%</span>} />
           <LineItem label="Network fee (est.)" value={quote.gasUsd ? formatUsd(quote.gasUsd) : 'Shown in Nimiq Pay'} />
-          <LineItem label="Route" value={<span className="sub">KyberSwap · {quote.sources.slice(0, 3).join(', ')}</span>} />
+          <LineItem label="Route" value={<span className="sub">{quote.routeLabel}</span>} />
         </div>
         {blocked && (
           <Notice tone="error">
@@ -254,6 +245,7 @@ export default function Swap() {
               : `Blocked: you'd lose about ${(quote.valueLoss! * 100).toFixed(1)}% versus the market price. Liquidity for ${to.symbol} is too thin for this trade. Try a smaller amount or a different stock.`}
           </Notice>
         )}
+        {quote.fallbackNote && <Notice>{quote.fallbackNote}{blocked ? ' Try again in a little while.' : ''}</Notice>}
         {warn && <Notice tone="error">Heads up: this trade costs {(quote.valueLoss! * 100).toFixed(1)}% versus the market price, mostly from thin liquidity. A smaller amount may get a better price.</Notice>}
         {!blocked && <Notice>Two confirmations in Nimiq Pay: approve exactly {fmt(quote.amountIn, from)}, then swap. If you've already approved enough, the first step is skipped.</Notice>}
         <div className="btn-row">
@@ -296,7 +288,8 @@ export default function Swap() {
           <div className="value-serif" style={{ fontSize: 30, margin: '6px 0 16px' }}>{fmt(received ?? quote.amountOutNet, to)}</div>
           <div style={{ textAlign: 'left' }}>
             <LineItem label="You paid" value={fmt(quote.amountIn, from)} />
-            <LineItem label="Platform fee" value={fmt(quote.platformFee, to)} />
+            {quote.platformFeeSide !== 'none' && <LineItem label="Platform fee" value={fmt(quote.platformFee, quote.platformFeeSide === 'in' ? from : to)} />}
+            <LineItem label="Route" value={quote.routeLabel} />
             <LineItem label="Network" value="BNB Chain" />
             <LineItem label="Transaction" value={<TxLink hash={swapHash} />} />
           </div>
