@@ -22,5 +22,5 @@ Status as of 2026-09-14.
 - [x] Treasury/test wallet created: `0xdDe751c9ECb63Ec99a1217A04B2D212AD521A239` (key kept outside the repo)
 - [x] Public repo: github.com/davieslennox0/qorbit-nimiq (MIT)
 - [x] Live at https://qorbitpay.xyz (Caddy, static files in /var/www/qorbitpay)
-- [ ] Register the Mini App in Nimiq Pay with https://qorbitpay.xyz
+- [x] Listing PR opened: https://github.com/nimiq/awesome/pull/37
 - [ ] Test end to end inside Nimiq Pay with a small real swap, gift and tip. Confirm Nimiq Pay's provider accepts `wallet_switchEthereumChain` to 0x38 and the SDK NIM send works.
