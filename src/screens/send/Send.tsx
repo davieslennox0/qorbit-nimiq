@@ -132,7 +132,7 @@ export default function Send() {
           <button className="asset-button" style={{ maxWidth: '100%' }} onClick={() => setPicking(true)} aria-label="Choose stock token">
             {token ? (
               <>
-                <TokenGlyph symbol={token.symbol} size={26} />
+                <TokenGlyph symbol={token.symbol} logo={token.logo} size={26} />
                 <span style={{ fontWeight: 600 }}>{token.symbol}</span>
                 <IssuerTag issuer={token.issuer} />
                 <span className="sub ellipsis" style={{ flex: 1, textAlign: 'left' }}>{token.name}</span>
@@ -192,7 +192,7 @@ export default function Send() {
           <LineItem label="To" value={<span className="mono">{shortAddress(trimmed)}</span>} />
           <LineItem label="Gift" value={giftLabel} strong />
           {tipLabel && <LineItem label="Tip" value={tipLabel} />}
-          {tipOn && tipKind === 'NIM' && <LineItem label="Tip to" value={<span className="mono">{tipNimRecipient.replace(/\s/g, '').replace(/(.{4})/g, '$1 ').trim()}</span>} />}
+          {tipOn && tipKind === 'NIM' && <LineItem label="Tip to" value={<span className="mono">{tipNimRecipient.replace(/\s/g, '').toUpperCase().replace(/(.{4})/g, '$1 ').trim()}</span>} />}
           <LineItem label="Platform fee" value="None" />
           <LineItem label="Network" value={tipOn && tipKind === 'NIM' ? 'BNB Chain + Nimiq' : 'BNB Chain'} />
         </div>

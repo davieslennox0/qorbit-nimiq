@@ -64,9 +64,10 @@ Wallet features need Nimiq Pay's injected providers (`window.ethereum`, `window.
 ## Data and privacy
 
 No analytics, no backend, no cookies. The app makes these network requests:
-- **BNB Chain public RPCs** (PublicNode, Binance, dRPC): balances and transactions.
+- **BNB Chain public RPCs** (defibit, Binance, 1RPC, PublicNode): balances and transactions.
 - **CoinGecko public API**: prices. Sends coin IDs only, never your address.
 - **KyberSwap aggregator API**: swap quotes. Sends the tokens, amount and your wallet address, because routing and the transaction need them.
+- **Token logo images** from the issuers' hosts (cdn.ondo.finance, xstocks-metadata.backed.fi) and CoinGecko, loaded with no referrer.
 
 ## License
 

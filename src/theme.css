@@ -327,3 +327,11 @@ a { color: var(--gold); }
 .sheet-list { overflow-y: auto; margin-top: 8px; }
 
 .disclosure { font-size: 12px; line-height: 1.5; color: var(--ink-faint); }
+
+.token-logo {
+  border-radius: 50%;
+  border: 1px solid var(--gold-line);
+  background: var(--paper-raised);
+  object-fit: cover;
+  flex-shrink: 0;
+}

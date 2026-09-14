@@ -34,7 +34,7 @@ export function TokenPicker({ title, assets, onPick, onClose, exclude }: {
         <div className="sheet-list">
           {filtered.slice(0, limit).map((a) => (
             <button key={a.address} className="token-row" onClick={() => onPick(a)}>
-              <TokenGlyph symbol={a.symbol} size={34} />
+              <TokenGlyph symbol={a.symbol} logo={a.logo} size={34} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600 }}>{a.symbol} <IssuerTag issuer={a.issuer} /></div>
                 <div className="sub ellipsis">{a.name}</div>

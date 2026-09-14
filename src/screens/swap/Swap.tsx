@@ -123,8 +123,9 @@ export default function Swap() {
       let exec = quote;
       if (Date.now() - quote.fetchedAt > QUOTE_MAX_AGE_MS) {
         const fresh = await getQuote({ tokenIn: quote.tokenIn, tokenOut: quote.tokenOut, amountIn: quote.amountIn, slippageBps: quote.slippageBps, user: evmAddress, feeRecipient });
-        if (fresh.amountOutNet <= reviewedMin) throw new Error('The price moved past your minimum. Get a new quote to continue.');
-        const headroomBps = Number(((fresh.amountOutNet - reviewedMin) * 10_000n) / fresh.amountOutNet);
+        // 1 bp less than the exact headroom absorbs the router's wei-level rounding on the built minimum.
+        const headroomBps = Number(((fresh.amountOutNet - reviewedMin) * 10_000n) / fresh.amountOutNet) - 1;
+        if (headroomBps < 0) throw new Error('The price moved past your minimum. Get a new quote to continue.');
         exec = { ...fresh, slippageBps: Math.min(quote.slippageBps, headroomBps) };
       }
       const tx = await buildSwapTx(exec, evmAddress, feeRecipient, reviewedMin);
@@ -133,10 +134,13 @@ export default function Swap() {
       setSwapHash(hash);
       const r = await publicClient.waitForTransactionReceipt({ hash });
       if (r.status !== 'success') throw new Error('Swap reverted. No funds were exchanged.');
-      const got = parseEventLogs({ abi: TRANSFER_EVENT, logs: r.logs, eventName: 'Transfer' })
+      const credits = parseEventLogs({ abi: TRANSFER_EVENT, logs: r.logs, eventName: 'Transfer' })
         .filter((l) => l.address.toLowerCase() === quote.tokenOut.toLowerCase() && l.args.to.toLowerCase() === evmAddress.toLowerCase())
-        .reduce((sum, l) => sum + l.args.value, 0n);
-      setReceived(got);
+        .map((l) => l.args.value)
+        .sort((a, b) => (a < b ? -1 : 1));
+      // If this wallet is also the fee recipient, the smaller credit is the platform fee, not the swap output.
+      if (credits.length > 1 && feeRecipient.toLowerCase() === evmAddress.toLowerCase()) credits.shift();
+      setReceived(credits.reduce((sum, v) => sum + v, 0n));
       setSwapState('done');
       setStep('success');
     } catch (e) {
@@ -150,7 +154,7 @@ export default function Swap() {
 
   const AssetButton = ({ asset, onClick, label }: { asset: Asset; onClick: () => void; label: string }) => (
     <button className="asset-button" onClick={onClick} aria-label={label}>
-      <TokenGlyph symbol={asset.symbol} size={26} />
+      <TokenGlyph symbol={asset.symbol} logo={asset.logo} size={26} />
       <span style={{ fontWeight: 600 }} className="ellipsis">{asset.symbol}</span>
       <span className="caret">▼</span>
     </button>
@@ -275,7 +279,7 @@ export default function Swap() {
           </div>
         </div>
         <button className="btn btn-primary" onClick={() => navigate('/portfolio')}>View portfolio</button>
-        <button className="btn btn-secondary" onClick={() => navigate(`/asset/${to.address}`)}>View {to.symbol}</button>
+        {findToken(to.address) && <button className="btn btn-secondary" onClick={() => navigate(`/asset/${to.address}`)}>View {to.symbol}</button>}
       </div>
     );
   }

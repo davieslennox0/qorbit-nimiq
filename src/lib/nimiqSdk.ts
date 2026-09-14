@@ -8,14 +8,6 @@ export function getNimiqProvider(): Promise<NimiqProvider> {
   return providerPromise;
 }
 
-export async function connectNimiqAccount(): Promise<string | null> {
-  const nimiq = await getNimiqProvider();
-  await nimiq.connect();
-  const accounts = await nimiq.listAccounts();
-  if ('error' in (accounts as object)) return null;
-  return (accounts as string[])[0] ?? null;
-}
-
 const NIM_ALPHABET = '0123456789ABCDEFGHJKLMNPQRSTUVXY';
 
 /** Validates a user-friendly Nimiq address (NQxx + 32 base32 chars) including its IBAN-style checksum. */

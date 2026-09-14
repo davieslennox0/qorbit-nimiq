@@ -42,6 +42,16 @@ async function fetchJson(url, init, tries = 5) {
   throw new Error(`Failed after retries: ${url}`);
 }
 
+/**
+ * Ondo's CDN names logos after the ticker. Their CSV occasionally links the wrong file
+ * (AALon pointed at Abbott's `abton_160x160.png`), so trust the ticker-named file in that case.
+ */
+function ondoLogo(symbol, csvUrl) {
+  const byTicker = `https://cdn.ondo.finance/tokens/logos/${symbol.toLowerCase()}_160x160.png`;
+  if (!csvUrl) return byTicker;
+  return csvUrl.split('/').pop() === `${symbol.toLowerCase()}_160x160.png` ? csvUrl : byTicker;
+}
+
 async function ondoTokens() {
   const text = await (await fetch(ONDO_CSV)).text();
   const [header, ...rows] = parseCsv(text);
@@ -55,6 +65,7 @@ async function ondoTokens() {
       issuer: 'ondo',
       kind: r[col('Type')] === 'ETF' ? 'etf' : 'stock',
       coingeckoId: r[col('CoinGecko API ID')] || undefined,
+      logo: ondoLogo(r[col('Symbol')], r[col('Link to image (png)')]),
     }));
 }
 
@@ -74,6 +85,7 @@ async function xstocksTokens() {
         address: getAddress(d.address),
         issuer: 'xstocks',
         kind: /etf|trust|fund/i.test(a.name) ? 'etf' : 'stock',
+        logo: a.logo || undefined,
       })),
   );
 }
@@ -132,6 +144,37 @@ async function probeLiquidity(tokens) {
   return results;
 }
 
+/** Keeps a logo only if the URL actually serves an image, so the app never shows a broken icon. */
+async function verifyLogos(tokens) {
+  const checked = new Array(tokens.length);
+  let next = 0;
+  const lane = async () => {
+    while (next < tokens.length) {
+      const i = next++;
+      const t = tokens[i];
+      let ok = false;
+      if (t.logo) {
+        try {
+          const res = await fetch(t.logo, { method: 'HEAD' });
+          ok = res.ok && (res.headers.get('content-type') ?? '').startsWith('image/');
+        } catch {}
+      }
+      checked[i] = ok ? t : { ...t, logo: undefined };
+    }
+  };
+  await Promise.all(Array.from({ length: 16 }, lane));
+  return checked;
+}
+
+if (process.argv.includes('--logos-only')) {
+  const existing = JSON.parse(fs.readFileSync(OUT, 'utf8'));
+  const sources = new Map([...(await ondoTokens()), ...(await xstocksTokens())].map((t) => [t.address.toLowerCase(), t.logo]));
+  const tokens = await verifyLogos(existing.tokens.map((t) => ({ ...t, logo: sources.get(t.address.toLowerCase()) })));
+  fs.writeFileSync(OUT, JSON.stringify({ ...existing, tokens }, null, 0) + '\n');
+  console.log(`Logos attached: ${tokens.filter((t) => t.logo).length}/${tokens.length}`);
+  process.exit(0);
+}
+
 const ondo = await ondoTokens();
 const xstocks = await xstocksTokens();
 console.log(`Issuer lists: Ondo ${ondo.length}, xStocks ${xstocks.length}`);
@@ -139,7 +182,7 @@ const verified = await verifyOnChain([...ondo, ...xstocks]);
 console.log(`Verified on-chain (symbol match, non-zero supply): ${verified.length}`);
 const withIds = await attachCoingeckoIds(verified);
 console.log(`With CoinGecko id: ${withIds.filter((t) => t.coingeckoId).length}`);
-const probed = await probeLiquidity(withIds);
+const probed = await probeLiquidity(await verifyLogos(withIds));
 const catalog = probed.sort((a, b) => Number(b.tradeable) - Number(a.tradeable) || a.symbol.localeCompare(b.symbol));
 console.log(`Tradeable ($${PROBE_USD} route under 5% loss): ${catalog.filter((t) => t.tradeable).length}`);
 

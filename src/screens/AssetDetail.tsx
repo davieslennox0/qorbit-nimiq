@@ -60,7 +60,7 @@ export default function AssetDetail() {
   return (
     <div className="screen stack" style={{ gap: 16 }}>
       <div className="row" style={{ gap: 12, justifyContent: 'flex-start' }}>
-        <TokenGlyph symbol={token.symbol} />
+        <TokenGlyph symbol={token.symbol} logo={token.logo} />
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 18 }}>{token.symbol} <IssuerTag issuer={token.issuer} /></div>
           <div className="sub ellipsis">{token.name} · {token.kind === 'etf' ? 'ETF' : 'Stock'}</div>

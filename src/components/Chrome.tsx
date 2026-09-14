@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/WalletContext';
 import { shortAddress } from '../lib/format';
@@ -40,8 +40,24 @@ export function TabBar() {
   );
 }
 
-export function TokenGlyph({ symbol, size = 40 }: { symbol: string; size?: number }) {
+export function TokenGlyph({ symbol, logo, size = 40 }: { symbol: string; logo?: string; size?: number }) {
+  const [failed, setFailed] = useState(false);
   const base = symbol.replace(/(on|x)$/, '');
+  if (logo && !failed) {
+    return (
+      <img
+        className="token-logo"
+        src={logo}
+        alt=""
+        width={size}
+        height={size}
+        loading="lazy"
+        decoding="async"
+        referrerPolicy="no-referrer"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
   return (
     <span className="token-glyph" style={{ width: size, height: size, fontSize: size * 0.36 }} aria-hidden>
       {base.slice(0, base.length > 3 ? 2 : 3)}

@@ -7,6 +7,7 @@ const CLIENT_ID = 'qorbit';
 /** KyberSwap MetaAggregationRouterV2 on BNB Chain — ABI verified via Sourcify. */
 export const KYBER_ROUTER: Address = '0x6131B5fae19EA4f9D964eAc0408E4408b66337b5';
 export const PLATFORM_FEE_BPS = 50n;
+const MIN_OUT_BUFFER_BPS = 1;
 
 export function getFeeRecipient(): Address | null {
   const v = import.meta.env.VITE_FEE_RECIPIENT;
@@ -94,7 +95,8 @@ export async function getQuote(p: { tokenIn: Address; tokenOut: Address; amountI
   return {
     tokenIn: p.tokenIn, tokenOut: p.tokenOut, amountIn: p.amountIn,
     amountOutNet, platformFee: gross - amountOutNet,
-    minOutNet: (amountOutNet * BigInt(10_000 - p.slippageBps)) / 10_000n,
+    // Extra 1 bp below the requested slippage: the router's built calldata rounds its own output down by a few wei.
+    minOutNet: (amountOutNet * BigInt(10_000 - p.slippageBps - MIN_OUT_BUFFER_BPS)) / 10_000n,
     slippageBps: p.slippageBps, priceImpact,
     gasUsd: Number(s.gasUsd) || null,
     sources: [...new Set(s.route.flat().map((h) => h.exchange))],

@@ -54,7 +54,7 @@ export default function Market() {
           const quote = t.coingeckoId ? quotes[t.coingeckoId] : null;
           return (
             <button key={t.address} className="token-row" onClick={() => navigate(`/asset/${t.address}`)}>
-              <TokenGlyph symbol={t.symbol} />
+              <TokenGlyph symbol={t.symbol} logo={t.logo} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600 }}>{t.symbol} <IssuerTag issuer={t.issuer} /></div>
                 <div className="sub ellipsis">{t.name}</div>

@@ -39,7 +39,7 @@ export default function Portfolio() {
         )}
         {holdings.map((h) => (
           <button key={h.address} className="token-row" onClick={() => navigate(`/asset/${h.address}`)}>
-            <TokenGlyph symbol={h.symbol} />
+            <TokenGlyph symbol={h.symbol} logo={h.logo} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600 }}>{h.symbol} <IssuerTag issuer={h.issuer} /></div>
               <div className="sub">{formatQty(h.quantity)} {h.kind === 'etf' ? 'units' : 'shares'}</div>
