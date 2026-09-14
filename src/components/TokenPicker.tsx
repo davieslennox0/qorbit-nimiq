@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Asset } from '../config/tokens';
-import { IssuerTag, TokenGlyph } from './Chrome';
+import { TokenGlyph } from './Chrome';
 
 const PAGE = 60;
 
@@ -36,7 +36,7 @@ export function TokenPicker({ title, assets, onPick, onClose, exclude }: {
             <button key={a.address} className="token-row" onClick={() => onPick(a)}>
               <TokenGlyph symbol={a.symbol} logo={a.logo} size={34} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600 }}>{a.symbol} <IssuerTag issuer={a.issuer} /></div>
+                <div style={{ fontWeight: 600 }}>{a.symbol}</div>
                 <div className="sub ellipsis">{a.name}</div>
               </div>
               {a.tradeable === false && <span className="label">Low liquidity</span>}

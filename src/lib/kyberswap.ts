@@ -57,8 +57,16 @@ export type SwapQuote = {
   platformFee: bigint;
   minOutNet: bigint;
   slippageBps: number;
-  /** Estimated fraction lost to price impact and pool fees, excluding the platform fee */
+  /** Fraction lost to price impact and pool fees vs. reference prices, excluding the platform fee */
   priceImpact: number | null;
+  /** Total fraction of value lost vs. reference prices, including the platform fee. Null if a reference price is missing. */
+  valueLoss: number | null;
+  inUsd: number | null;
+  outUsd: number | null;
+  refUsdIn: number | null;
+  refUsdOut: number | null;
+  decimalsIn: number;
+  decimalsOut: number;
   gasUsd: number | null;
   sources: string[];
   summary: RouteSummary;
@@ -77,7 +85,27 @@ async function kyber<T>(path: string, init?: RequestInit): Promise<T> {
   return json.data as T;
 }
 
-export async function getQuote(p: { tokenIn: Address; tokenOut: Address; amountIn: bigint; slippageBps: number; user: Address; feeRecipient: Address }): Promise<SwapQuote> {
+/** Swaps losing more than this vs. reference market prices (fee included) are refused outright. */
+export const MAX_VALUE_LOSS = 0.05;
+/** Above this the review screen shows a prominent warning. */
+export const WARN_VALUE_LOSS = 0.02;
+
+/**
+ * Independent fair-price check. The aggregator's own USD estimates are never used here:
+ * for thin pools they can be absurd (a Coca-Cola token was valued at $2.7B per 0.001 unit),
+ * which once let a 90%-loss swap show "0.00% price impact".
+ */
+export function assertFairPrice(q: SwapQuote, symbolOut: string) {
+  if (q.valueLoss === null) throw new Error(`Qorbit can't verify a fair market price for ${symbolOut} right now, so this swap is disabled to protect your funds.`);
+  if (q.valueLoss > MAX_VALUE_LOSS) {
+    throw new Error(`This swap would lose about ${(q.valueLoss * 100).toFixed(1)}% of its value versus the market price (liquidity for ${symbolOut} is too thin). Qorbit blocked it to protect your funds.`);
+  }
+}
+
+export async function getQuote(p: {
+  tokenIn: Address; tokenOut: Address; amountIn: bigint; slippageBps: number; user: Address; feeRecipient: Address;
+  decimalsIn: number; decimalsOut: number; refUsdIn: number | null; refUsdOut: number | null;
+}): Promise<SwapQuote> {
   const qs = new URLSearchParams({
     tokenIn: p.tokenIn, tokenOut: p.tokenOut, amountIn: p.amountIn.toString(),
     feeAmount: PLATFORM_FEE_BPS.toString(), chargeFeeBy: 'currency_out', isInBps: 'true', feeReceiver: p.feeRecipient, origin: p.user,
@@ -89,15 +117,19 @@ export async function getQuote(p: { tokenIn: Address; tokenOut: Address; amountI
   const amountOutNet = BigInt(s.amountOut);
   if (amountOutNet === 0n) throw new Error('No liquidity route exists for this pair right now.');
   const gross = (amountOutNet * 10_000n) / (10_000n - PLATFORM_FEE_BPS);
-  const inUsd = Number(s.amountInUsd), outUsd = Number(s.amountOutUsd);
-  const priceImpact = inUsd > 0 && outUsd > 0 ? Math.max(0, 1 - outUsd / (1 - Number(PLATFORM_FEE_BPS) / 10_000) / inUsd) : null;
+  const haveRefs = !!p.refUsdIn && !!p.refUsdOut;
+  const inUsd = haveRefs ? (Number(p.amountIn) / 10 ** p.decimalsIn) * p.refUsdIn! : null;
+  const outUsd = haveRefs ? (Number(amountOutNet) / 10 ** p.decimalsOut) * p.refUsdOut! : null;
+  const valueLoss = inUsd && outUsd !== null ? 1 - outUsd / inUsd : null;
+  const priceImpact = inUsd && outUsd !== null ? Math.max(0, 1 - outUsd / (1 - Number(PLATFORM_FEE_BPS) / 10_000) / inUsd) : null;
 
   return {
     tokenIn: p.tokenIn, tokenOut: p.tokenOut, amountIn: p.amountIn,
     amountOutNet, platformFee: gross - amountOutNet,
     // Extra 1 bp below the requested slippage: the router's built calldata rounds its own output down by a few wei.
     minOutNet: (amountOutNet * BigInt(10_000 - p.slippageBps - MIN_OUT_BUFFER_BPS)) / 10_000n,
-    slippageBps: p.slippageBps, priceImpact,
+    slippageBps: p.slippageBps, priceImpact, valueLoss, inUsd, outUsd,
+    refUsdIn: p.refUsdIn, refUsdOut: p.refUsdOut, decimalsIn: p.decimalsIn, decimalsOut: p.decimalsOut,
     gasUsd: Number(s.gasUsd) || null,
     sources: [...new Set(s.route.flat().map((h) => h.exchange))],
     summary: s, fetchedAt: Date.now(),

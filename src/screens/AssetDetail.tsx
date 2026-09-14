@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { formatUnits } from 'viem';
-import { findToken, ISSUER_DISCLOSURE, ISSUER_LABEL } from '../config/tokens';
+import { findToken, TOKEN_DISCLOSURE } from '../config/tokens';
 import { EXPLORER_ADDRESS } from '../config/chain';
 import { useWallet } from '../hooks/WalletContext';
 import { useQuotes } from '../hooks/useQuotes';
 import { fetchPriceHistory, type PricePoint } from '../lib/prices';
 import { readBalance } from '../lib/erc20';
-import { ChangePill, IssuerTag, Notice, TokenGlyph } from '../components/Chrome';
+import { ChangePill, Notice, TokenGlyph } from '../components/Chrome';
 import { formatQty, formatUsd, shortAddress } from '../lib/format';
 
 function Sparkline({ points }: { points: PricePoint[] }) {
@@ -62,7 +62,7 @@ export default function AssetDetail() {
       <div className="row" style={{ gap: 12, justifyContent: 'flex-start' }}>
         <TokenGlyph symbol={token.symbol} logo={token.logo} />
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 18 }}>{token.symbol} <IssuerTag issuer={token.issuer} /></div>
+          <div style={{ fontWeight: 700, fontSize: 18 }}>{token.symbol}</div>
           <div className="sub ellipsis">{token.name} · {token.kind === 'etf' ? 'ETF' : 'Stock'}</div>
         </div>
       </div>
@@ -101,7 +101,7 @@ export default function AssetDetail() {
       {holds && <button className="btn btn-secondary" onClick={() => navigate(`/send?token=${token.address}`)}>Send as gift</button>}
 
       <p className="disclosure">
-        {ISSUER_DISCLOSURE[token.issuer]} {ISSUER_LABEL[token.issuer]} contract:{' '}
+        {TOKEN_DISCLOSURE} Token contract:{' '}
         <a href={EXPLORER_ADDRESS(token.address)} target="_blank" rel="noreferrer" className="mono">{shortAddress(token.address)}</a>
       </p>
     </div>

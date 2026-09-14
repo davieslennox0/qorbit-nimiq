@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/WalletContext';
 import { usePortfolio } from '../hooks/usePortfolio';
 import { LOW_BNB_THRESHOLD } from '../config/tokens';
-import { ChangePill, IssuerTag, Notice, TokenGlyph } from '../components/Chrome';
+import { ChangePill, Notice, TokenGlyph } from '../components/Chrome';
 import { formatQty, formatUsd } from '../lib/format';
 
 export default function Portfolio() {
@@ -71,7 +71,7 @@ export default function Portfolio() {
           <button key={h.address} className="token-row" onClick={() => navigate(`/asset/${h.address}`)}>
             <TokenGlyph symbol={h.symbol} logo={h.logo} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600 }}>{h.symbol} <IssuerTag issuer={h.issuer} /></div>
+              <div style={{ fontWeight: 600 }}>{h.symbol}</div>
               <div className="sub">{formatQty(h.quantity)} {h.kind === 'etf' ? 'units' : 'shares'}</div>
             </div>
             <div style={{ textAlign: 'right' }}>

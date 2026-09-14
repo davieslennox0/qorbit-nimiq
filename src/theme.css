@@ -293,11 +293,6 @@ a { color: var(--gold); }
 }
 .link-btn.gold { color: var(--gold); font-size: 13px; }
 
-.issuer-tag {
-  display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: 4px;
-  border: 1px solid var(--gold-line); color: var(--gold); font-size: 10px; font-weight: 700;
-  letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 2px;
-}
 
 .warn-banner.error { border-color: rgba(161, 58, 46, 0.35); background: rgba(161, 58, 46, 0.08); color: var(--down); }
 

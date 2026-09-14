@@ -4,11 +4,12 @@ import { formatUnits, parseEventLogs, parseUnits, type Address } from 'viem';
 import { findToken, STABLES, TOKENS, USDT, type Asset } from '../../config/tokens';
 import { useWallet } from '../../hooks/WalletContext';
 import { ERC20_ABI, publicClient, readAllowance, readBalance } from '../../lib/erc20';
-import { buildSwapTx, getFeeRecipient, getQuote, KYBER_ROUTER, type SwapQuote } from '../../lib/kyberswap';
+import { assertFairPrice, buildSwapTx, getFeeRecipient, getQuote, KYBER_ROUTER, MAX_VALUE_LOSS, WARN_VALUE_LOSS, type SwapQuote } from '../../lib/kyberswap';
+import { fetchQuotes } from '../../lib/prices';
 import { getWalletClient } from '../../lib/wallet';
 import { formatQty, formatUsd } from '../../lib/format';
 import { LineItem, StepList, TxLink } from '../../components/Receipt';
-import { IssuerTag, Notice, TokenGlyph } from '../../components/Chrome';
+import { Notice, TokenGlyph } from '../../components/Chrome';
 import { TokenPicker } from '../../components/TokenPicker';
 
 type Step = 'enter' | 'review' | 'confirm' | 'success';
@@ -87,7 +88,13 @@ export default function Swap() {
     setError(null);
     setQuoting(true);
     try {
-      setQuote(await getQuote({ tokenIn: from.address, tokenOut: to.address, amountIn, slippageBps, user: evmAddress, feeRecipient }));
+      // Reference market prices come from CoinGecko, independent of the swap router.
+      const refs = await fetchQuotes([from.coingeckoId, to.coingeckoId].filter((x): x is string => !!x)).catch(() => ({} as Record<string, { usd: number } | null>));
+      const refUsd = (a: Asset) => (a.coingeckoId ? refs[a.coingeckoId]?.usd ?? null : null);
+      setQuote(await getQuote({
+        tokenIn: from.address, tokenOut: to.address, amountIn, slippageBps, user: evmAddress, feeRecipient,
+        decimalsIn: from.decimals, decimalsOut: to.decimals, refUsdIn: refUsd(from), refUsdOut: refUsd(to),
+      }));
       setStep('review');
     } catch (e) {
       setError(friendlyError(e));
@@ -103,6 +110,7 @@ export default function Swap() {
     const wallet = getWalletClient(evmAddress);
     const reviewedMin = quote.minOutNet;
     try {
+      assertFairPrice(quote, to.symbol);
       if (approveState !== 'done' && approveState !== 'skipped') {
         const allowance = await readAllowance(quote.tokenIn, evmAddress, KYBER_ROUTER);
         if (allowance >= quote.amountIn) {
@@ -122,7 +130,11 @@ export default function Swap() {
       // Refresh a stale route, but never let the on-chain minimum drop below what the user reviewed.
       let exec = quote;
       if (Date.now() - quote.fetchedAt > QUOTE_MAX_AGE_MS) {
-        const fresh = await getQuote({ tokenIn: quote.tokenIn, tokenOut: quote.tokenOut, amountIn: quote.amountIn, slippageBps: quote.slippageBps, user: evmAddress, feeRecipient });
+        const fresh = await getQuote({
+          tokenIn: quote.tokenIn, tokenOut: quote.tokenOut, amountIn: quote.amountIn, slippageBps: quote.slippageBps, user: evmAddress, feeRecipient,
+          decimalsIn: quote.decimalsIn, decimalsOut: quote.decimalsOut, refUsdIn: quote.refUsdIn, refUsdOut: quote.refUsdOut,
+        });
+        assertFairPrice(fresh, to.symbol);
         // 1 bp less than the exact headroom absorbs the router's wei-level rounding on the built minimum.
         const headroomBps = Number(((fresh.amountOutNet - reviewedMin) * 10_000n) / fresh.amountOutNet) - 1;
         if (headroomBps < 0) throw new Error('The price moved past your minimum. Get a new quote to continue.');
@@ -184,7 +196,6 @@ export default function Swap() {
 
           <div className="row">
             <span className="label">You receive</span>
-            <IssuerTag issuer={to.issuer} />
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <div className="sub ellipsis" style={{ flex: 1 }}>{to.name}</div>
@@ -218,7 +229,10 @@ export default function Swap() {
   }
 
   if (step === 'review' && quote) {
-    const highImpact = quote.priceImpact !== null && quote.priceImpact > 0.03;
+    const unverified = quote.valueLoss === null;
+    const blocked = unverified || quote.valueLoss! > MAX_VALUE_LOSS;
+    const warn = !blocked && quote.valueLoss! > WARN_VALUE_LOSS;
+    const lossColor = blocked ? 'var(--down)' : warn ? 'var(--gold)' : undefined;
     return (
       <div className="screen stack">
         <h2 className="wordmark page-title">Review</h2>
@@ -227,15 +241,24 @@ export default function Swap() {
           <LineItem label="Platform fee (0.5%)" value={fmt(quote.platformFee, to)} />
           <LineItem label="You receive (est.)" value={fmt(quote.amountOutNet, to)} strong />
           <LineItem label={`Minimum received (${slippageBps / 100}% slippage)`} value={fmt(quote.minOutNet, to)} />
-          <LineItem label="Price impact (est.)" value={quote.priceImpact === null ? '—' : <span style={{ color: highImpact ? 'var(--down)' : undefined }}>{(quote.priceImpact * 100).toFixed(2)}%</span>} />
+          <LineItem label="Market value paid" value={quote.inUsd === null ? '—' : formatUsd(quote.inUsd)} />
+          <LineItem label="Market value received" value={quote.outUsd === null ? '—' : <span style={{ color: lossColor }}>{formatUsd(quote.outUsd)}</span>} />
+          <LineItem label="Cost vs. market (incl. fee)" value={quote.valueLoss === null ? 'Unverified' : <span style={{ color: lossColor }}>{(quote.valueLoss * 100).toFixed(2)}%</span>} />
           <LineItem label="Network fee (est.)" value={quote.gasUsd ? formatUsd(quote.gasUsd) : 'Shown in Nimiq Pay'} />
           <LineItem label="Route" value={<span className="sub">KyberSwap · {quote.sources.slice(0, 3).join(', ')}</span>} />
         </div>
-        {highImpact && <Notice tone="error">High price impact: liquidity is thin for this trade size. Consider a smaller amount.</Notice>}
-        <Notice>Two confirmations in Nimiq Pay: approve exactly {fmt(quote.amountIn, from)}, then swap. If you've already approved enough, the first step is skipped.</Notice>
+        {blocked && (
+          <Notice tone="error">
+            {unverified
+              ? `Qorbit can't verify a fair market price for ${to.symbol} right now, so this swap is blocked to protect your funds.`
+              : `Blocked: you'd lose about ${(quote.valueLoss! * 100).toFixed(1)}% versus the market price. Liquidity for ${to.symbol} is too thin for this trade. Try a smaller amount or a different stock.`}
+          </Notice>
+        )}
+        {warn && <Notice tone="error">Heads up: this trade costs {(quote.valueLoss! * 100).toFixed(1)}% versus the market price, mostly from thin liquidity. A smaller amount may get a better price.</Notice>}
+        {!blocked && <Notice>Two confirmations in Nimiq Pay: approve exactly {fmt(quote.amountIn, from)}, then swap. If you've already approved enough, the first step is skipped.</Notice>}
         <div className="btn-row">
           <button className="btn btn-secondary" onClick={() => setStep('enter')}>Edit</button>
-          <button className="btn btn-primary" onClick={execute}>Confirm</button>
+          {!blocked && <button className="btn btn-primary" onClick={execute}>Confirm</button>}
         </div>
       </div>
     );

@@ -5,17 +5,17 @@ Status as of 2026-09-14.
 ## Decisions made
 
 - **Chain: BNB Chain (56).** Nimiq Pay's `window.ethereum` supports it ([nimiq.dev](https://nimiq.dev/mini-apps/)). Arbitrum One was dropped: on-chain checks found no DEX liquidity there for any Dinari, Backed or Robinhood stock token, and Dinari's `.d` tokens are KYC-gated.
-- **Issuers: Ondo + xStocks.** Official lists give 450 Ondo and 828 xStocks tokens on BNB Chain, all verified on-chain (1,278 total).
-- **Routing: KyberSwap aggregator** instead of a single DEX. It reaches market-maker quotes, Uniswap v4 and PancakeSwap Infinity liquidity that direct V3 pools don't have. Measured 2026-09-14, $1,000 buys: TSLAon, NVDAon, SPYon and FXIon under 0.4% loss. NVDAx and TSLAx about 75% loss, so xStocks depth on BNB Chain is only good for small trades.
+- **Issuer: Ondo only.** Ondo's official list gives 450 tokens on BNB Chain, all verified on-chain.
+- **Routing: KyberSwap aggregator** instead of a single DEX. It reaches market-maker quotes, Uniswap v4 and PancakeSwap Infinity liquidity that direct V3 pools don't have.
+- **Fair-price guard:** swaps are valued at CoinGecko market prices, never the aggregator's USD estimates (it has valued a PLTRon route at $3.9T). The guard blocks anything over a 5% loss or with an unverifiable price.
 - **Fee:** KyberSwap's built-in router fee (50 bps on output). Verified with an on-chain simulation: the fee recipient got exactly 0.500% and the user got exactly the quoted amount. No custom contract, nothing to deploy.
 
 ## Known limits
 
-- Only ~170 of the 1,278 listings route a $50 buy today (156 Ondo, 14 xStocks). The Market defaults to "Tradeable now". Other listings can be held and sent, and swaps show an honest "no route" message.
-- 158 xStocks tokens have no CoinGecko id, and xStocks' own price API blocks browser (CORS) requests, so those show "—" for price. None of them is currently tradeable.
+- Only 33 of 450 Ondo tokens pass the $50 fair-price probe today (e.g. SPY, NVDA, TSLA, AAPL, AMZN, GOOGL, QQQ, COIN, AMD). MSFTon, METAon, NFLXon and PLTRon lose 44–72% on a $50 buy, so their swaps are blocked. The Market defaults to "Tradeable now".
 - The KyberSwap keyless endpoint is rate-limited. The API gateway needs a key, which a no-backend app can't hold safely.
 - `@nimiq/mini-app-sdk` v0.1.0 has no Nimiq Pay handle → address lookup, so Send takes a wallet address. NIM tips need the recipient's NQ address.
-- Both issuers exclude US persons (disclosed on Asset Detail).
+- Ondo excludes US persons (disclosed on Asset Detail).
 
 ## Still to do
 

@@ -1,15 +1,17 @@
-// Builds src/config/catalog.json: every Ondo and xStocks token deployed on BNB Chain,
-// sourced only from issuer-published lists, verified on-chain, with a liquidity probe.
-// Usage: node scripts/build-catalog.mjs
+// Builds src/config/catalog.json: every Ondo tokenized stock/ETF deployed on BNB Chain,
+// sourced only from Ondo's published token list, verified on-chain, with a liquidity probe.
+// Usage: node scripts/build-catalog.mjs            (full rebuild)
+//        node scripts/build-catalog.mjs --logos-only (refresh logos, keep liquidity flags)
 import fs from 'node:fs';
 import { createPublicClient, getAddress, http, parseAbi } from 'viem';
 import { bsc } from 'viem/chains';
 
 const ONDO_CSV = 'https://www.dropbox.com/scl/fi/qjfxyg748mx0dwi6up86d/EXTERNAL-Ondo-GM-Tokens-Ondo-GM-Tokens.csv?rlkey=n3no1w78wrah3umsl0nr9s77i&dl=1';
-const XSTOCKS_API = 'https://api.xstocks.fi/api/v2/public/assets';
 const KYBER = 'https://aggregator-api.kyberswap.com/bsc/api/v1/routes';
 const USDT = '0x55d398326f99059fF775485246999027B3197955';
-const PROBE_USD = 50n;
+const PROBE_USD = 50;
+/** Max loss vs. the reference price for a $50 buy to count as tradeable. */
+const MAX_PROBE_LOSS = 0.03;
 const OUT = new URL('../src/config/catalog.json', import.meta.url);
 
 const client = createPublicClient({ chain: bsc, transport: http('https://bsc-rpc.publicnode.com', { timeout: 60_000 }) });
@@ -62,32 +64,10 @@ async function ondoTokens() {
       symbol: r[col('Symbol')],
       name: r[col('Stock Name')] || r[col('Name')],
       address: getAddress(r[col('BSC Deployed Address')].trim()),
-      issuer: 'ondo',
       kind: r[col('Type')] === 'ETF' ? 'etf' : 'stock',
       coingeckoId: r[col('CoinGecko API ID')] || undefined,
       logo: ondoLogo(r[col('Symbol')], r[col('Link to image (png)')]),
     }));
-}
-
-async function xstocksTokens() {
-  const all = [];
-  for (let page = 0; ; page++) {
-    const j = await fetchJson(`${XSTOCKS_API}?limit=100&page=${page}`);
-    all.push(...j.nodes);
-    if (!j.page.hasNextPage) break;
-  }
-  return all.flatMap((a) =>
-    a.isTradingHalted ? [] : a.deployments
-      .filter((d) => d.network === 'BinanceSmartChain')
-      .map((d) => ({
-        symbol: a.symbol,
-        name: a.name.replace(/ xStock$/, ''),
-        address: getAddress(d.address),
-        issuer: 'xstocks',
-        kind: /etf|trust|fund/i.test(a.name) ? 'etf' : 'stock',
-        logo: a.logo || undefined,
-      })),
-  );
 }
 
 async function verifyOnChain(tokens) {
@@ -109,31 +89,43 @@ async function verifyOnChain(tokens) {
   return out;
 }
 
-async function attachCoingeckoIds(tokens) {
-  const list = await fetchJson('https://api.coingecko.com/api/v3/coins/list?include_platform=true');
-  const byAddress = new Map();
-  for (const coin of list) {
-    const a = coin.platforms?.['binance-smart-chain'];
-    if (a) byAddress.set(a.toLowerCase(), coin.id);
+async function referencePrices(ids) {
+  const prices = {};
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const json = await fetchJson(`https://api.coingecko.com/api/v3/simple/price?ids=${chunk.join(',')}&vs_currencies=usd`);
+    for (const id of chunk) if (typeof json[id]?.usd === 'number') prices[id] = json[id].usd;
+    await sleep(2500);
   }
-  return tokens.map((t) => ({ ...t, coingeckoId: t.coingeckoId ?? byAddress.get(t.address.toLowerCase()) }));
+  return prices;
 }
 
+/**
+ * A token is tradeable only if a $50 USDT buy returns at least 97% of $50 when the output
+ * is valued at CoinGecko's reference price. The aggregator's own USD estimates are never
+ * used: for thin pools they can be wildly wrong (a Coca-Cola token once quoted at $2.7B).
+ */
 async function probeLiquidity(tokens) {
-  const amountIn = (PROBE_USD * 10n ** 18n).toString();
+  const prices = await referencePrices(tokens.map((t) => t.coingeckoId).filter(Boolean));
+  const amountIn = (BigInt(PROBE_USD) * 10n ** 18n).toString();
   let done = 0;
   const results = new Array(tokens.length);
   const worker = async (queue) => {
     for (const i of queue) {
       const t = tokens[i];
-      try {
-        const j = await fetchJson(`${KYBER}?tokenIn=${USDT}&tokenOut=${t.address}&amountIn=${amountIn}`, { headers: { 'x-client-id': 'qorbit' } });
-        const r = j.data?.routeSummary;
-        const loss = r ? 1 - Number(r.amountOutUsd) / Number(r.amountInUsd) : 1;
-        results[i] = { ...t, tradeable: !!r && Number(r.amountOutUsd) > 0 && loss < 0.05 };
-      } catch {
-        results[i] = { ...t, tradeable: false };
+      const ref = t.coingeckoId ? prices[t.coingeckoId] : undefined;
+      let tradeable = false;
+      if (ref) {
+        try {
+          const j = await fetchJson(`${KYBER}?tokenIn=${USDT}&tokenOut=${t.address}&amountIn=${amountIn}`, { headers: { 'x-client-id': 'qorbit' } });
+          const r = j.data?.routeSummary;
+          if (r) {
+            const valueOut = (Number(r.amountOut) / 10 ** t.decimals) * ref;
+            tradeable = 1 - valueOut / PROBE_USD < MAX_PROBE_LOSS;
+          }
+        } catch {}
       }
+      results[i] = { ...t, tradeable };
       if (++done % 100 === 0) console.log(`  probed ${done}/${tokens.length}`);
       await sleep(150);
     }
@@ -168,7 +160,7 @@ async function verifyLogos(tokens) {
 
 if (process.argv.includes('--logos-only')) {
   const existing = JSON.parse(fs.readFileSync(OUT, 'utf8'));
-  const sources = new Map([...(await ondoTokens()), ...(await xstocksTokens())].map((t) => [t.address.toLowerCase(), t.logo]));
+  const sources = new Map((await ondoTokens()).map((t) => [t.address.toLowerCase(), t.logo]));
   const tokens = await verifyLogos(existing.tokens.map((t) => ({ ...t, logo: sources.get(t.address.toLowerCase()) })));
   fs.writeFileSync(OUT, JSON.stringify({ ...existing, tokens }, null, 0) + '\n');
   console.log(`Logos attached: ${tokens.filter((t) => t.logo).length}/${tokens.length}`);
@@ -176,15 +168,14 @@ if (process.argv.includes('--logos-only')) {
 }
 
 const ondo = await ondoTokens();
-const xstocks = await xstocksTokens();
-console.log(`Issuer lists: Ondo ${ondo.length}, xStocks ${xstocks.length}`);
-const verified = await verifyOnChain([...ondo, ...xstocks]);
+console.log(`Ondo list: ${ondo.length} BNB Chain tokens`);
+const verified = await verifyOnChain(ondo);
 console.log(`Verified on-chain (symbol match, non-zero supply): ${verified.length}`);
-const withIds = await attachCoingeckoIds(verified);
-console.log(`With CoinGecko id: ${withIds.filter((t) => t.coingeckoId).length}`);
-const probed = await probeLiquidity(await verifyLogos(withIds));
+const withLogos = await verifyLogos(verified);
+console.log(`With logo: ${withLogos.filter((t) => t.logo).length}`);
+const probed = await probeLiquidity(withLogos);
 const catalog = probed.sort((a, b) => Number(b.tradeable) - Number(a.tradeable) || a.symbol.localeCompare(b.symbol));
-console.log(`Tradeable ($${PROBE_USD} route under 5% loss): ${catalog.filter((t) => t.tradeable).length}`);
+console.log(`Tradeable ($${PROBE_USD} buy within ${MAX_PROBE_LOSS * 100}% of reference price): ${catalog.filter((t) => t.tradeable).length}`);
 
 fs.writeFileSync(OUT, JSON.stringify({ generatedAt: new Date().toISOString(), chainId: 56, tokens: catalog }, null, 0) + '\n');
 console.log(`Wrote ${catalog.length} tokens to src/config/catalog.json`);

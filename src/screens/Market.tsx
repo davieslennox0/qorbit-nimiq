@@ -1,25 +1,23 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TOKENS, type Issuer } from '../config/tokens';
+import { TOKENS } from '../config/tokens';
 import { useQuotes } from '../hooks/useQuotes';
-import { ChangePill, IssuerTag, Notice, TokenGlyph } from '../components/Chrome';
+import { ChangePill, Notice, TokenGlyph } from '../components/Chrome';
 import { matchesQuery } from '../components/TokenPicker';
 import { formatUsd } from '../lib/format';
 
 const PAGE = 40;
 type Scope = 'tradeable' | 'all';
-type IssuerFilter = 'any' | Issuer;
 
 export default function Market() {
   const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [scope, setScope] = useState<Scope>('tradeable');
-  const [issuer, setIssuer] = useState<IssuerFilter>('any');
   const [limit, setLimit] = useState(PAGE);
 
   const filtered = useMemo(
-    () => TOKENS.filter((t) => (scope === 'all' || t.tradeable) && (issuer === 'any' || t.issuer === issuer) && matchesQuery(t, q)),
-    [q, scope, issuer],
+    () => TOKENS.filter((t) => (scope === 'all' || t.tradeable) && matchesQuery(t, q)),
+    [q, scope],
   );
   const visible = filtered.slice(0, limit);
   const { quotes, loading, error } = useQuotes(visible.map((t) => t.coingeckoId));
@@ -35,13 +33,6 @@ export default function Market() {
         <button className={scope === 'tradeable' ? 'on' : ''} onClick={() => { setScope('tradeable'); reset(); }}>Tradeable now</button>
         <button className={scope === 'all' ? 'on' : ''} onClick={() => { setScope('all'); reset(); }}>All listings</button>
       </div>
-      <div className="segmented" role="group" aria-label="Issuer">
-        {(['any', 'ondo', 'xstocks'] as IssuerFilter[]).map((i) => (
-          <button key={i} className={issuer === i ? 'on' : ''} onClick={() => { setIssuer(i); reset(); }}>
-            {i === 'any' ? 'All issuers' : i === 'ondo' ? 'Ondo' : 'xStocks'}
-          </button>
-        ))}
-      </div>
 
       {error && <Notice>{error}</Notice>}
 
@@ -56,7 +47,7 @@ export default function Market() {
             <button key={t.address} className="token-row" onClick={() => navigate(`/asset/${t.address}`)}>
               <TokenGlyph symbol={t.symbol} logo={t.logo} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600 }}>{t.symbol} <IssuerTag issuer={t.issuer} /></div>
+                <div style={{ fontWeight: 600 }}>{t.symbol}</div>
                 <div className="sub ellipsis">{t.name}</div>
               </div>
               <div style={{ textAlign: 'right' }}>

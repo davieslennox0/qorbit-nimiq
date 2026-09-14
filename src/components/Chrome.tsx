@@ -2,7 +2,6 @@ import { useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/WalletContext';
 import { shortAddress } from '../lib/format';
-import { ISSUER_LABEL, type Issuer } from '../config/tokens';
 
 export function TopBar({ back }: { back?: boolean }) {
   const navigate = useNavigate();
@@ -42,7 +41,7 @@ export function TabBar() {
 
 export function TokenGlyph({ symbol, logo, size = 40 }: { symbol: string; logo?: string; size?: number }) {
   const [failed, setFailed] = useState(false);
-  const base = symbol.replace(/(on|x)$/, '');
+  const base = symbol.replace(/on$/, '');
   if (logo && !failed) {
     return (
       <img
@@ -63,11 +62,6 @@ export function TokenGlyph({ symbol, logo, size = 40 }: { symbol: string; logo?:
       {base.slice(0, base.length > 3 ? 2 : 3)}
     </span>
   );
-}
-
-export function IssuerTag({ issuer }: { issuer?: Issuer }) {
-  if (!issuer) return null;
-  return <span className="issuer-tag">{ISSUER_LABEL[issuer]}</span>;
 }
 
 export function ChangePill({ change }: { change: number | null | undefined }) {

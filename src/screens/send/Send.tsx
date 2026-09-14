@@ -9,7 +9,7 @@ import { getWalletClient } from '../../lib/wallet';
 import { isValidNimAddress, sendNimTip } from '../../lib/nimiqSdk';
 import { formatQty, shortAddress } from '../../lib/format';
 import { LineItem, StepList, TxLink } from '../../components/Receipt';
-import { IssuerTag, Notice, TokenGlyph } from '../../components/Chrome';
+import { Notice, TokenGlyph } from '../../components/Chrome';
 import { TokenPicker } from '../../components/TokenPicker';
 
 type Step = 'enter' | 'review' | 'sending' | 'success';
@@ -134,7 +134,6 @@ export default function Send() {
               <>
                 <TokenGlyph symbol={token.symbol} logo={token.logo} size={26} />
                 <span style={{ fontWeight: 600 }}>{token.symbol}</span>
-                <IssuerTag issuer={token.issuer} />
                 <span className="sub ellipsis" style={{ flex: 1, textAlign: 'left' }}>{token.name}</span>
               </>
             ) : <span className="sub" style={{ flex: 1, textAlign: 'left' }}>Choose a stock token</span>}
